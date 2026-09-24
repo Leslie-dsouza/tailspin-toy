@@ -5,6 +5,7 @@ import type { Database } from './db';
 import {
     getAllGames,
     getAllGameIds,
+    getFilteredGames,
     getGameById,
 } from './games';
 
@@ -62,5 +63,62 @@ describe('games data-access helpers', () => {
     it('returns null for a non-existent game', async () => {
         await seedGames(db, 2);
         expect(await getGameById(db, 99999)).toBeNull();
+    });
+
+    it('filters by one or more categories and a publisher', async () => {
+        const [strategy] = await db
+            .insert(categories)
+            .values({ name: 'Strategy', description: 'strategy' })
+            .returning({ id: categories.id });
+        const [puzzle] = await db
+            .insert(categories)
+            .values({ name: 'Puzzle', description: 'puzzle' })
+            .returning({ id: categories.id });
+        const [firstPublisher] = await db
+            .insert(publishers)
+            .values({ name: 'First Publisher', description: 'first' })
+            .returning({ id: publishers.id });
+        const [secondPublisher] = await db
+            .insert(publishers)
+            .values({ name: 'Second Publisher', description: 'second' })
+            .returning({ id: publishers.id });
+
+        await db.insert(games).values([
+            {
+                title: 'Alpha Strategy',
+                description: 'alpha',
+                starRating: 4,
+                categoryId: strategy.id,
+                publisherId: firstPublisher.id,
+            },
+            {
+                title: 'Beta Puzzle',
+                description: 'beta',
+                starRating: 4,
+                categoryId: puzzle.id,
+                publisherId: firstPublisher.id,
+            },
+            {
+                title: 'Gamma Strategy',
+                description: 'gamma',
+                starRating: 4,
+                categoryId: strategy.id,
+                publisherId: secondPublisher.id,
+            },
+        ]);
+
+        expect((await getFilteredGames(db, { categoryIds: [strategy.id, puzzle.id] })).map((g) => g.title))
+            .toEqual(['Alpha Strategy', 'Beta Puzzle', 'Gamma Strategy']);
+        expect((await getFilteredGames(db, { publisherId: firstPublisher.id })).map((g) => g.title))
+            .toEqual(['Alpha Strategy', 'Beta Puzzle']);
+        expect((await getFilteredGames(db, {
+            categoryIds: [strategy.id],
+            publisherId: firstPublisher.id,
+        })).map((g) => g.title)).toEqual(['Alpha Strategy']);
+    });
+
+    it('returns no games when filters do not match', async () => {
+        await seedGames(db, 2);
+        expect(await getFilteredGames(db, { categoryIds: [99999] })).toEqual([]);
     });
 });
